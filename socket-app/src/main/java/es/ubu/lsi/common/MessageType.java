@@ -1,5 +1,5 @@
 package es.ubu.lsi.common;
 
-public class MessageType {
+public interface MessageType {
 
 }
