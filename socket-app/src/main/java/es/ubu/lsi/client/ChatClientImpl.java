@@ -1,45 +1,100 @@
 package es.ubu.lsi.client;
 
+import java.awt.TrayIcon.MessageType;
+import java.awt.im.InputContext;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.Socket;
+import java.net.UnknownHostException;
+import java.util.Scanner;
+
+import es.ubu.lsi.*;
 import es.ubu.lsi.common.ChatMessage;
 
-public class ChatClientImpl implements ChatClient{
+public class   ChatClientImpl implements ChatClient{
 	
 	private String server;
 	private String username;
 	private int port;
 	private boolean carryOn = true;
 	private int id;
+	private String line = null;
 	
 	public ChatClientImpl(String server, int port, String username) {
-		
+		this.server = server;
+		this.port = port;
+		this.username = username;
+		this.id = username.hashCode();
+		this.carryOn = false;
 	}
 
 	@Override
 	public boolean start() {
-		// TODO Auto-generated method stub
-		return false;
-	}
+			// Inicializamos la variable para escuchar
+			carryOn = true;
+			
+			// Leemos los mensajes del cliente
+			Scanner scanner = new Scanner(System.in);
+			while(carryOn) {
+				line = scanner.nextLine();
+				sendMessage(new ChatMessage(id, ChatMessage.MessageType.MESSAGE, line));
+			}
+			scanner.close();
+		return carryOn;
+	} 
 
 	@Override
 	public void sendMessage(ChatMessage msg) {
-		// TODO Auto-generated method stub
+		Socket socket;
+		try {
+			socket = new Socket(server, port);
+			ObjectOutputStream output = new ObjectOutputStream(socket.getOutputStream());
+			output.writeObject(msg);
+			socket.close();
+		} catch (UnknownHostException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		
 	}
 
 	@Override
 	public void disconnect() {
-		// TODO Auto-generated method stub
-		
+		carryOn = false;
 	}
 	
 	public static void main(String[] args) {
-		
-	}
-	
-	public class ChatClientListener {
-		public void run() {
-			
+		if (args.length == 2) {
+			String server = args[0], username = args[1];
+			ChatClientImpl client = new ChatClientImpl(server, 1500, username);
+			client.start();
 		}
 	}
-
+	
+	public class ChatClientListener implements Runnable{
+		private ObjectInputStream input;
+		
+		//Constructor de la clase
+		public ChatClientListener(ObjectInputStream input) {
+			this.input = input;
+		}
+		
+		@Override
+		public void run() {
+			while(true) {
+				try {
+					ChatMessage message = (ChatMessage) input.readObject();
+					// Verificar si el remitente está bloqueado
+					System.out.println(message.getMessage());
+				}catch (Exception ex) {
+					System.out.println("Conexión cerrada.");
+				}
+			}
+		}
+		
+	}
 }
