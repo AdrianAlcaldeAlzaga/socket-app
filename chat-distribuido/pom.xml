@@ -77,6 +77,10 @@
   		 				</goals>
   		 				<configuration>
   		 					<mainClass>es.ubu.lsi.client.ChatClientImpl</mainClass>
+  		 					<arguments>
+  		 					<argument>localhost</argument>
+  		 					<argument>usuario1</argument>
+  		 					</arguments>
   		 				</configuration>
   		 			</execution>
   		 		</executions>

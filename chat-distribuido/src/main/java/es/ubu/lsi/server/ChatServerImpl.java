@@ -25,7 +25,7 @@ public class ChatServerImpl implements ChatServer {
 	public ChatServerImpl(int port) {
 		this.port = port;
 		this.alive = false;
-		clientId = 0;
+		this.clientId = 0;
 	}
 
 	@Override
@@ -37,18 +37,21 @@ public class ChatServerImpl implements ChatServer {
 			// Inicializamos los sockets
 			ServerSocket serverSocket = new ServerSocket(port);
 			System.out.println("Servidor inicializado en el puerto " + port);
-			Socket socket;
+			Socket socket = null;
 			while (alive) {
 				socket = serverSocket.accept();
-				ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
+				
 				ObjectOutputStream output = new ObjectOutputStream(socket.getOutputStream());
+				ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
 				
 				String username = input.readObject().toString();
 				
-				ServerThreadForClient clientThread =  new ServerThreadForClient(socket, username, input, output);
+				ServerThreadForClient clientThread =  new ServerThreadForClient(clientId++, username, socket, output, input);
 				clients.add(clientThread);
 				clientThread.start();
 			}
+			serverSocket.close();
+			socket.close();
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -69,7 +72,7 @@ public class ChatServerImpl implements ChatServer {
 		synchronized (clients) {
 			for (ServerThreadForClient client: clients) {
 				try {
-					client.output.writeObject(message);
+					client.outputStream.writeObject(message);
 				} catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -93,32 +96,31 @@ public class ChatServerImpl implements ChatServer {
 		private int id;
 		private String username;
 		private Socket socket;
-		private ObjectInputStream input;
-		private ObjectOutputStream output;
+		private ObjectOutputStream outputStream;
+		private ObjectInputStream inputStream;
 		
-		public ServerThreadForClient(Socket socket, String username, ObjectInputStream input, ObjectOutputStream output) {
-			this.socket = socket;
+		public ServerThreadForClient(int id, String username,  Socket socket, ObjectOutputStream outputStream, ObjectInputStream inputStream) {
+			this.id = id;
 			this.username = username;
-			this.input = input;
-			this.output = output;
+			this.socket = socket;
+			this.outputStream = outputStream;
+			this.inputStream = inputStream;
 		}
 		
 		public void run() {
 			try {
-				ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
-				
-				username = input.readObject().toString();
-				
-				output.writeInt(id);
+				System.out.println(username + " se ha conectado con id: " + id);
+				synchronized (clients) {
+					clients.add(this);
+				}
 				
 				while(alive) {
-					ChatMessage msg = (ChatMessage) input.readObject();
+					ChatMessage msg = (ChatMessage) inputStream.readObject();
 					if (msg.getType() == ChatMessage.MessageType.LOGOUT)
 						break;
 					System.out.println(username + ": " + msg.getMessage());
 					broadcast(msg);
 				}
-				socket.close();
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
