@@ -40,24 +40,24 @@ public class   ChatClientImpl implements ChatClient{
 				output = new ObjectOutputStream(socket.getOutputStream());
 				output.flush(); // Muy recomendable
 				input = new ObjectInputStream(socket.getInputStream());
-
-				System.out.println("Inicializamos las variables");
 				
 				// Enviar el nombre de usuario
 				output.writeObject(username);
-				System.out.println("Enviamos el nombre");
 				
 				//Inicializar hilo de escucha
 				new Thread(new ChatClientListener(input)).start();
-				System.out.println("Inicializamos el hilo");
 				
 
 				Scanner scanner = new Scanner(System.in);
-				System.out.println("Antes del bucle while");
+//				System.out.println("Antes del bucle while");
 				while (carryOn) {
-					System.out.println("Entrada al bucle");
 					line = scanner.nextLine();
-					output.writeObject(new ChatMessage(id, ChatMessage.MessageType.MESSAGE, line));
+					
+					if(line.equals("logout")) {
+						sendMessage(new ChatMessage(id, ChatMessage.MessageType.LOGOUT, line));
+						disconnect();
+					} else
+						sendMessage(new ChatMessage(id, ChatMessage.MessageType.MESSAGE, line));
 				}
 				socket.close();
 				scanner.close();
@@ -74,12 +74,8 @@ public class   ChatClientImpl implements ChatClient{
 
 	@Override
 	public void sendMessage(ChatMessage msg) {
-		Socket socket;
 		try {
-			socket = new Socket(server, port);
-			ObjectOutputStream output = new ObjectOutputStream(socket.getOutputStream());
 			output.writeObject(msg);
-			socket.close();
 		} catch (UnknownHostException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -117,18 +113,13 @@ public class   ChatClientImpl implements ChatClient{
 		
 		@Override
 		public void run() {
-			while(true) {
-				try {
-					System.out.println("Metodo run del ChatClientListener");
-					while(carryOn) {
-						System.out.println("Bucle while del ChatClientListener");
-						ChatMessage message = (ChatMessage) input.readObject();
-						// Verificar si el remitente está bloqueado
-						System.out.println(message.getMessage());
-					}
-				}catch (Exception ex) {
-					System.out.println("Conexión cerrada.");
+			try {
+//				System.out.println("Metodo run del ChatClientListener");
+				while(carryOn) {
+					ChatMessage message = (ChatMessage) input.readObject();
 				}
+			}catch (Exception ex) {
+				System.out.println("Conexión cerrada.");
 			}
 		}
 		

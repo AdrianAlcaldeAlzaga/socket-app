@@ -76,11 +76,11 @@
   		 					<goal>java</goal>
   		 				</goals>
   		 				<configuration>
-  		 					<mainClass>es.ubu.lsi.client.ChatClientImpl</mainClass>
-  		 					<arguments>
-  		 					<argument>localhost</argument>
-  		 					<argument>usuario1</argument>
-  		 					</arguments>
+  		 					<mainClass>es.ubu.lsi.client.ChatClientImpl</mainClass>			
+							<arguments>
+							  <argument>${host}</argument>
+							  <argument>${user}</argument>
+							</arguments>
   		 				</configuration>
   		 			</execution>
   		 		</executions>
