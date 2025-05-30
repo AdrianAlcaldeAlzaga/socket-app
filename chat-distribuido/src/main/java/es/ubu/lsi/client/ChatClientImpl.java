@@ -5,6 +5,7 @@ import java.awt.im.InputContext;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Scanner;
@@ -33,33 +34,35 @@ public class   ChatClientImpl implements ChatClient{
 	@Override
 	public boolean start() {
 			try {
-				System.out.println("Invocacion al metodo start del cliente");
 				carryOn = true;
+				// Conexion con el servidor
 				Socket socket = new Socket(server, port);
 
+				// Inicializamos los Flujos 
 				output = new ObjectOutputStream(socket.getOutputStream());
-				output.flush(); // Muy recomendable
+				output.flush();
 				input = new ObjectInputStream(socket.getInputStream());
 				
 				// Enviar el nombre de usuario
 				output.writeObject(username);
 				
-				//Inicializar hilo de escucha
+				//Inicializar hilo de escucha del servidor
 				new Thread(new ChatClientListener(input)).start();
-				
-
 				Scanner scanner = new Scanner(System.in);
-//				System.out.println("Antes del bucle while");
 				while (carryOn) {
 					line = scanner.nextLine();
 					
 					if(line.equals("logout")) {
 						sendMessage(new ChatMessage(id, ChatMessage.MessageType.LOGOUT, line));
 						disconnect();
-					} else
+					}else if(line.equals("shutdown"))
+						sendMessage(new ChatMessage(id, ChatMessage.MessageType.SHUTDOWN, line));
+					else
 						sendMessage(new ChatMessage(id, ChatMessage.MessageType.MESSAGE, line));
 				}
 				socket.close();
+				output.close();
+				input.close();
 				scanner.close();
 				
 			} catch (UnknownHostException e) {
@@ -76,6 +79,7 @@ public class   ChatClientImpl implements ChatClient{
 	public void sendMessage(ChatMessage msg) {
 		try {
 			output.writeObject(msg);
+			output.flush();
 		} catch (UnknownHostException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -89,6 +93,7 @@ public class   ChatClientImpl implements ChatClient{
 	@Override
 	public void disconnect() {
 		carryOn = false;
+		System.out.println("Se ha desconectado el usuario: " + username);
 	}
 	
 	public static void main(String[] args) {
@@ -114,9 +119,9 @@ public class   ChatClientImpl implements ChatClient{
 		@Override
 		public void run() {
 			try {
-//				System.out.println("Metodo run del ChatClientListener");
 				while(carryOn) {
 					ChatMessage message = (ChatMessage) input.readObject();
+					System.out.println(message.getMessage());
 				}
 			}catch (Exception ex) {
 				System.out.println("Conexión cerrada.");

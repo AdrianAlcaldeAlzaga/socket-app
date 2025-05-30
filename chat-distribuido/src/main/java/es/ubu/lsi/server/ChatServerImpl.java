@@ -19,8 +19,9 @@ public class ChatServerImpl implements ChatServer {
 	private SimpleDateFormat sdf;
 	private int port;
 	private boolean alive;
+	ServerSocket serverSocket;
 	
-	private List<ServerThreadForClient> clients = Collections.synchronizedList(new ArrayList<>());
+	private List<ServerThreadForClient> clients = new ArrayList<>();
 
 	public ChatServerImpl(int port) {
 		this.port = port;
@@ -35,17 +36,23 @@ public class ChatServerImpl implements ChatServer {
 			alive = true; 	
 			
 			// Inicializamos los sockets
-			ServerSocket serverSocket = new ServerSocket(port);
+			serverSocket = new ServerSocket(port);
 			System.out.println("Servidor inicializado en el puerto " + port);
 			Socket socket = null;
+			
+			// Bucle para la escucha del servidor
 			while (alive) {
+				// Conexiones entrantes
 				socket = serverSocket.accept();
 				
+				// Flujos de entrada y salida
 				ObjectOutputStream output = new ObjectOutputStream(socket.getOutputStream());
 				ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
 				
+				// Nombre del cliente
 				String username = input.readObject().toString();
 				
+				// Arrancamos al cliente
 				ServerThreadForClient clientThread =  new ServerThreadForClient(clientId++, username, socket, output, input);
 				clients.add(clientThread);
 				clientThread.start();
@@ -63,8 +70,21 @@ public class ChatServerImpl implements ChatServer {
 
 	@Override
 	public void shutdown() {
-		// TODO Auto-generated method stub
-		
+		alive = false;
+		synchronized (clients) {
+			for (ServerThreadForClient client : clients) {
+				try {
+					client.input.close();
+					client.output.close();
+					client.socket.close();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			clients.clear();
+			System.out.println("Servidor Apagado.");
+		}
 	}
 
 	@Override
@@ -72,7 +92,7 @@ public class ChatServerImpl implements ChatServer {
 		synchronized (clients) {
 			for (ServerThreadForClient client: clients) {
 				try {
-					client.outputStream.writeObject(message);
+					client.output.writeObject(message);
 				} catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -83,7 +103,16 @@ public class ChatServerImpl implements ChatServer {
 
 	@Override
 	public void remove(int id) {
-		// TODO Auto-generated method stub
+		String userElim = null;
+		synchronized (clients) {
+			for (ServerThreadForClient client : clients) {
+				if (client.id == id) {
+					userElim = client.username;
+				}
+			}
+			clients.removeIf(client -> client.id == id);
+			System.out.println("El usuario " + userElim + " ha sido eliminado");
+		}
 		
 	}
 	
@@ -92,33 +121,41 @@ public class ChatServerImpl implements ChatServer {
 		server.startup();
 	}
 	
+	
+	/**
+	 * Conexion con cada cliente específico
+	 */
 	public class ServerThreadForClient extends Thread{
 		private int id;
 		private String username;
 		private Socket socket;
-		private ObjectOutputStream outputStream;
-		private ObjectInputStream inputStream;
+		private ObjectOutputStream output;
+		private ObjectInputStream input;
 		
-		public ServerThreadForClient(int id, String username,  Socket socket, ObjectOutputStream outputStream, ObjectInputStream inputStream) {
+		public ServerThreadForClient(int id, String username,  Socket socket, ObjectOutputStream output, ObjectInputStream input) {
 			this.id = id;
 			this.username = username;
 			this.socket = socket;
-			this.outputStream = outputStream;
-			this.inputStream = inputStream;
+			this.output = output ;
+			this.input = input;
 		}
 		
 		public void run() {
 			try {
 				System.out.println(username + " se ha conectado con id: " + id);
-				synchronized (clients) {
-					clients.add(this);
-				}
 				
 				while(alive) {
-					ChatMessage msg = (ChatMessage) inputStream.readObject();
-					if (msg.getType() == ChatMessage.MessageType.LOGOUT)
+					ChatMessage msg = (ChatMessage) input.readObject();
+					
+					
+					if (msg.getType() == ChatMessage.MessageType.LOGOUT) {
+						remove(id);
 						break;
+					}else if(msg.getType() == ChatMessage.MessageType.SHUTDOWN)
+						shutdown();
 					System.out.println(username + ": " + msg.getMessage());
+					
+					//Reenviamos el mensaje al resto de clientes
 					broadcast(msg);
 				}
 			} catch (IOException e) {
