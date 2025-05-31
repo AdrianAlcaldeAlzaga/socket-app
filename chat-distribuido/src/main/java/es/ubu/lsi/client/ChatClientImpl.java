@@ -1,11 +1,8 @@
 package es.ubu.lsi.client;
 
-import java.awt.TrayIcon.MessageType;
-import java.awt.im.InputContext;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.Scanner;
@@ -22,6 +19,8 @@ public class   ChatClientImpl implements ChatClient{
 	private String line = null;
 	ObjectInputStream input;
 	ObjectOutputStream output;
+	private Socket socket;
+	private Scanner scanner;
 	
 	public ChatClientImpl(String server, int port, String username) {
 		this.server = server;
@@ -36,7 +35,7 @@ public class   ChatClientImpl implements ChatClient{
 			try {
 				carryOn = true;
 				// Conexion con el servidor
-				Socket socket = new Socket(server, port);
+				socket = new Socket(server, port);
 
 				// Inicializamos los Flujos 
 				output = new ObjectOutputStream(socket.getOutputStream());
@@ -48,22 +47,17 @@ public class   ChatClientImpl implements ChatClient{
 				
 				//Inicializar hilo de escucha del servidor
 				new Thread(new ChatClientListener(input)).start();
-				Scanner scanner = new Scanner(System.in);
+				scanner = new Scanner(System.in);
 				while (carryOn) {
 					line = scanner.nextLine();
 					
 					if(line.equals("logout")) {
 						sendMessage(new ChatMessage(id, ChatMessage.MessageType.LOGOUT, line));
-						disconnect();
 					}else if(line.equals("shutdown"))
 						sendMessage(new ChatMessage(id, ChatMessage.MessageType.SHUTDOWN, line));
 					else
 						sendMessage(new ChatMessage(id, ChatMessage.MessageType.MESSAGE, line));
 				}
-				socket.close();
-				output.close();
-				input.close();
-				scanner.close();
 				
 			} catch (UnknownHostException e) {
 				// TODO Auto-generated catch block
@@ -71,15 +65,19 @@ public class   ChatClientImpl implements ChatClient{
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
+			}finally {
+				closeClient(scanner);
 			}
-		return carryOn;
+		return !carryOn;
 	} 
 
 	@Override
 	public void sendMessage(ChatMessage msg) {
 		try {
-			output.writeObject(msg);
-			output.flush();
+			if(output != null && carryOn) {
+				output.writeObject(msg);
+				output.flush();
+			}
 		} catch (UnknownHostException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -89,11 +87,27 @@ public class   ChatClientImpl implements ChatClient{
 		}
 		
 	}
+	
+	/**
+	 * Método para cerrar todos los recursos de forma segura
+	 */
+	private void closeClient(Scanner scanner) {
+		try {
+			if (input != null || output != null || scanner != null) 
+				input.close();
+
+			if (scanner != null)
+				scanner.close();
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
 
 	@Override
 	public void disconnect() {
 		carryOn = false;
-		System.out.println("Se ha desconectado el usuario: " + username);
+		System.out.println("Pulsa cualquier tecla para continuar...");
 	}
 	
 	public static void main(String[] args) {
@@ -101,8 +115,6 @@ public class   ChatClientImpl implements ChatClient{
 			String server = args[0], username = args[1];
 			ChatClientImpl client = new ChatClientImpl(server, 1500, username);
 			client.start();
-			
-			System.out.println("Uso: java ChatClientImpl <servidor> <usuario>");
 		}else {
 			System.out.println("Error: Se deben proporcionar dos argumentos en la entrada del cliente ");
 		}
@@ -122,11 +134,17 @@ public class   ChatClientImpl implements ChatClient{
 				while(carryOn) {
 					ChatMessage message = (ChatMessage) input.readObject();
 					System.out.println(message.getMessage());
+						
+					if(message.getType() != ChatMessage.MessageType.MESSAGE) {
+						System.out.println("Usuario desconectado: " + username);
+						disconnect();
+						break;
+					}
 				}
 			}catch (Exception ex) {
-				System.out.println("Conexión cerrada.");
+				System.out.println("Conexión con " + username + " cerrada.");
+				disconnect();
 			}
 		}
-		
 	}
 }

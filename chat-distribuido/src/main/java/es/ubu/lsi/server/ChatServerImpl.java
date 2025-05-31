@@ -5,10 +5,11 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.text.SimpleDateFormat;
+import java.net.SocketException;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import es.ubu.lsi.common.ChatMessage;
 
@@ -16,10 +17,11 @@ public class ChatServerImpl implements ChatServer {
 	
 	private static final int DEFAULT_PORT = 1500;
 	private int clientId;
-	private SimpleDateFormat sdf;
+//	private SimpleDateFormat sdf;
 	private int port;
 	private boolean alive;
 	ServerSocket serverSocket;
+	private Set<String> globalBannedUsers = new HashSet<String>();
 	
 	private List<ServerThreadForClient> clients = new ArrayList<>();
 
@@ -42,48 +44,72 @@ public class ChatServerImpl implements ChatServer {
 			
 			// Bucle para la escucha del servidor
 			while (alive) {
-				// Conexiones entrantes
-				socket = serverSocket.accept();
-				
-				// Flujos de entrada y salida
-				ObjectOutputStream output = new ObjectOutputStream(socket.getOutputStream());
-				ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
-				
-				// Nombre del cliente
-				String username = input.readObject().toString();
-				
-				// Arrancamos al cliente
-				ServerThreadForClient clientThread =  new ServerThreadForClient(clientId++, username, socket, output, input);
-				clients.add(clientThread);
-				clientThread.start();
-			}
-			serverSocket.close();
-			socket.close();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+				try {
+					// Conexiones entrantes
+					socket = serverSocket.accept();
+					
+					// Flujos de entrada y salida
+					ObjectOutputStream output = new ObjectOutputStream(socket.getOutputStream());
+					ObjectInputStream input = new ObjectInputStream(socket.getInputStream());
+					
+					// Nombre del cliente
+					String username = input.readObject().toString();
+					
+					// Arrancamos al cliente
+					ServerThreadForClient clientThread =  new ServerThreadForClient(clientId++, username, socket, output, input);
+					clients.add(clientThread);
+					clientThread.start();
+				}
+				catch (IOException e) {
+					if(alive)
+						System.out.println("Error al aceptar la conexión: " + e.getMessage());
+					else
+						System.out.println("Servidor detenido");
+					break; // Detenemos el bucle del socket
+				}
+			} 
 		} catch (ClassNotFoundException e) {
+			System.err.println("Error al leer el nombre de usuario: " + e.getMessage());
+		} catch (IOException e1) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			e1.printStackTrace();
+		} finally {
+			closeServerSocket();
 		}
 	}
 
 	@Override
 	public void shutdown() {
+		System.out.println("Apagando el servidor...");
 		alive = false;
 		synchronized (clients) {
+			// Enviamos mensaje de shutdown a los clientes
 			for (ServerThreadForClient client : clients) {
 				try {
-					client.input.close();
-					client.output.close();
-					client.socket.close();
+					ChatMessage shutdownMsg = new ChatMessage(0, ChatMessage.MessageType.SHUTDOWN,
+							"El servidor se ha apagado");
+					client.output.writeObject(shutdownMsg);
+					client.output.flush();
+					client.closeClientConnections();
 				} catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 			}
+			
 			clients.clear();
-			System.out.println("Servidor Apagado.");
+		}
+		closeServerSocket();
+		System.out.println("Servidor apagado correctamente");
+	}
+	
+	private void closeServerSocket() {
+		if (serverSocket != null && !serverSocket.isClosed()) {
+			try {
+				serverSocket.close();
+			} catch (IOException e) {
+				System.err.println("Error al cerrar el Socket del Servidor: " + e.getMessage());
+			}
 		}
 	}
 
@@ -93,9 +119,11 @@ public class ChatServerImpl implements ChatServer {
 			for (ServerThreadForClient client: clients) {
 				try {
 					client.output.writeObject(message);
+					client.output.flush();
 				} catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
+					clients.remove(client.id);
 				}
 			}
 		}
@@ -145,24 +173,85 @@ public class ChatServerImpl implements ChatServer {
 				System.out.println(username + " se ha conectado con id: " + id);
 				
 				while(alive) {
-					ChatMessage msg = (ChatMessage) input.readObject();
-					
+					ChatMessage msg = null;
+					try {
+						msg = (ChatMessage) input.readObject();
+						System.out.println(username + ": " + msg.getMessage());
+					} catch (SocketException s) {
+						System.out.println("Conexion con el socket cerrada");
+						break;
+					}
 					
 					if (msg.getType() == ChatMessage.MessageType.LOGOUT) {
 						remove(id);
 						break;
-					}else if(msg.getType() == ChatMessage.MessageType.SHUTDOWN)
+					} else if (msg.getType() == ChatMessage.MessageType.SHUTDOWN) {
 						shutdown();
-					System.out.println(username + ": " + msg.getMessage());
-					
-					//Reenviamos el mensaje al resto de clientes
-					broadcast(msg);
+						break;
+					} else if(msg.getMessage().startsWith("ban "))
+						banUser(msg.getMessage());
+					else if(msg.getMessage().startsWith("unban "))
+						unbanUser(msg.getMessage());
+					else {
+						//Reenviamos el mensaje al resto de clientes
+						if (!globalBannedUsers.contains(username))
+							broadcast(msg);
+					}
 				}
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			} catch (ClassNotFoundException e) {
 				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} finally {
+				alive = false;
+				closeClientConnections();
+			}
+		}
+		
+		private void banUser(String message) {
+			String[] parts = message.split(" ");
+			String user = parts[1];
+			
+			if(!globalBannedUsers.contains(user) && !user.equals(username) && !globalBannedUsers.contains(username)) {
+				globalBannedUsers.add(user);
+				System.out.println(username + " ha baneado a " + user);
+			} else if(user.equals(username))
+				System.out.println("No se puede banear a uno mismo");
+			else if(globalBannedUsers.contains(username))
+				System.out.println("Un usuario baneado no puede banear a otro");
+			else
+				System.out.println(user + " ya está baneado");
+		}
+		
+		private void unbanUser(String message) {
+			String[] parts = message.split(" ");
+			String user = parts[1];
+			
+			if(globalBannedUsers.contains(user) && !user.equals(username) && !globalBannedUsers.contains(username)) {
+				globalBannedUsers.remove(user);
+				System.out.println(username + " ha desbaneado a " + user);
+			} else if(user.equals(username))
+				System.out.println("No se puede desbanear a uno mismo");
+			else if(globalBannedUsers.contains(username))
+				System.out.println("Un usuario baneado no puede desbanear a otro");
+			else
+				System.out.println(user + " no está baneado");
+		}
+
+		public void closeClientConnections(){
+			try {
+				if (input != null) {
+					input.close();
+				}
+				if (output != null) {
+					output.close();
+				}
+				if (socket != null) {
+					socket.close();
+				}
+			} catch (IOException e) {
 				e.printStackTrace();
 			}
 			
