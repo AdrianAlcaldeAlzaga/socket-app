@@ -194,8 +194,12 @@ public class ChatServerImpl implements ChatServer {
 						unbanUser(msg.getMessage());
 					else {
 						//Reenviamos el mensaje al resto de clientes
-						if (!globalBannedUsers.contains(username))
-							broadcast(msg);
+						if (!globalBannedUsers.contains(username)) {
+							String original = msg.getMessage();
+							String patrocinado = "Adrián patrocina el mensaje: " + original;
+							ChatMessage patrocinadoMsg = new ChatMessage(msg.getId(), msg.getType(), patrocinado);
+							broadcast(patrocinadoMsg);
+						}
 					}
 				}
 			} catch (IOException e) {
